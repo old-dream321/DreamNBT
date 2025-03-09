@@ -1,5 +1,5 @@
 # DreamNBT
-一个基岩版NBT工具
+一个Minecraft基岩版NBT解析工具
 
 ## 安装
 ```shell
