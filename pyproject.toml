@@ -12,12 +12,6 @@ description = "一个Minecraft基岩版NBT解析工具"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.8"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Apache Licence",
-    "Operating System :: OS Independent",
-]
-dependencies = []
 
 [project.urls]
 "Homepage" = "https://github.com/old-dream321/DreamNBT"
