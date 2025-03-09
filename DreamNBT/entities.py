@@ -73,6 +73,7 @@ class TAG_OneNumber(TAG):
     def __repr__(self):
         return self.format_string()
 
+
 class TAG_Byte(TAG_OneNumber):
     id = TagId.TAG_BYTE
     fmt = Struct('<b')
@@ -153,7 +154,6 @@ class TAG_Byte_Array(TAG, MutableSequence):
         self.value.append(value)
 
 
-
 class TAG_Int_Array(TAG, MutableSequence):
     id = TagId.TAG_INT_ARRAY
 
@@ -221,7 +221,8 @@ class TAG_Long_Array(TAG, MutableSequence):
             self.value.append(TAG_Long(binary=binary).value)
 
     def to_binary(self):
-        return TAG_Int(len(self.value)).to_binary() + b''.join(TAG_Long(value=value).to_binary() for value in self.value)
+        return TAG_Int(len(self.value)).to_binary() + b''.join(
+            TAG_Long(value=value).to_binary() for value in self.value)
 
     def format_string(self, layer: int = 0):
         res = ""

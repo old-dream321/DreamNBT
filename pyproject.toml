@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "DreamNBT"
+version = "0.0.1"
+authors = [
+    {name = "old-dream321", email = "hzz123123@outlook.com"}
+]
+description = "一个Minecraft基岩版NBT解析工具"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Licence",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.urls]
+"Homepage" = "https://github.com/old-dream321/DreamNBT"
