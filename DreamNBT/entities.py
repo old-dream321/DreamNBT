@@ -2,6 +2,7 @@ from enum import Enum
 from struct import Struct
 from io import BytesIO
 from collections.abc import MutableSequence, Sequence, MutableMapping
+from typing import Optional, List
 
 
 class TagId(Enum):
@@ -107,8 +108,8 @@ class TAG_Double(TAG_OneNumber):
 class TAG_Byte_Array(TAG, MutableSequence):
     id = TagId.TAG_BYTE_ARRAY
 
-    def __init__(self, name=None, binary=None):
-        super().__init__(name)
+    def __init__(self, value: Optional[bytearray] = None, name=None, binary=None):
+        super().__init__(name, value)
         if binary:
             self.__parse_binary(binary)
 
@@ -117,7 +118,7 @@ class TAG_Byte_Array(TAG, MutableSequence):
         self.value = bytearray(binary.read(length))
 
     def to_binary(self):
-        return TAG_Int(self.value).to_binary() + self.value
+        return TAG_Int(len(self.value)).to_binary() + self.value
 
     def format_string(self, layer: int = 0):
         res = ""
@@ -157,8 +158,8 @@ class TAG_Byte_Array(TAG, MutableSequence):
 class TAG_Int_Array(TAG, MutableSequence):
     id = TagId.TAG_INT_ARRAY
 
-    def __init__(self, name=None, binary=None):
-        super().__init__(name)
+    def __init__(self, value: Optional[List[int]] = None, name=None, binary=None):
+        super().__init__(name, value)
         if binary:
             self.__parse_binary(binary)
 
@@ -209,8 +210,8 @@ class TAG_Int_Array(TAG, MutableSequence):
 class TAG_Long_Array(TAG, MutableSequence):
     id = TagId.TAG_LONG_ARRAY
 
-    def __init__(self, name=None, binary=None):
-        super().__init__(name)
+    def __init__(self, value: Optional[List[int]] = None, name=None, binary=None):
+        super().__init__(name, value)
         if binary:
             self.__parse_binary(binary)
 
@@ -262,12 +263,10 @@ class TAG_Long_Array(TAG, MutableSequence):
 class TAG_String(TAG, Sequence):
     id = TagId.TAG_STRING
 
-    def __init__(self, name=None, value=None, binary=None):
-        super().__init__(name)
+    def __init__(self, value: Optional[str] = None, name=None, binary=None):
+        super().__init__(name, value)
         if binary:
             self.__parse_binary(binary)
-        elif value:
-            self.value = value
 
     def __parse_binary(self, binary: BytesIO):
         length = Struct('<H').unpack(binary.read(2))[0]
