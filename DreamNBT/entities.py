@@ -49,6 +49,7 @@ class TAG_End(TAG):
 
 class TAG_OneNumber(TAG):
     fmt = None
+    snbt_suffix = None
 
     def __init__(self, value=None, name=None, binary=None):
         super().__init__(name, value)
@@ -60,6 +61,9 @@ class TAG_OneNumber(TAG):
 
     def to_binary(self):
         return self.fmt.pack(self.value)
+
+    def to_snbt(self):
+        return str(self.value) + self.snbt_suffix
 
     def format_string(self, layer: int = 0):
         res = ""
@@ -78,16 +82,19 @@ class TAG_OneNumber(TAG):
 class TAG_Byte(TAG_OneNumber):
     id = TagId.TAG_BYTE
     fmt = Struct('<b')
+    snbt_suffix = 'b'
 
 
 class TAG_Short(TAG_OneNumber):
     id = TagId.TAG_SHORT
     fmt = Struct('<h')
+    snbt_suffix = 's'
 
 
 class TAG_Int(TAG_OneNumber):
     id = TagId.TAG_INT
     fmt = Struct('<i')
+    snbt_suffix = ''
 
 
 class TAG_Long(TAG_OneNumber):
@@ -98,11 +105,13 @@ class TAG_Long(TAG_OneNumber):
 class TAG_Float(TAG_OneNumber):
     id = TagId.TAG_FLOAT
     fmt = Struct('<f')
+    snbt_suffix = 'f'
 
 
 class TAG_Double(TAG_OneNumber):
     id = TagId.TAG_DOUBLE
     fmt = Struct('<d')
+    snbt_suffix = 'd'
 
 
 class TAG_Byte_Array(TAG, MutableSequence):
@@ -119,6 +128,15 @@ class TAG_Byte_Array(TAG, MutableSequence):
 
     def to_binary(self):
         return TAG_Int(len(self.value)).to_binary() + self.value
+
+    def to_snbt(self):
+        res = "[B;"
+        for i in self.value:
+            res += f"{int(i)}B,"
+        if res[-1] == ',':
+            res = res[:-1]
+        res += "]"
+        return res
 
     def format_string(self, layer: int = 0):
         res = ""
@@ -171,6 +189,15 @@ class TAG_Int_Array(TAG, MutableSequence):
 
     def to_binary(self):
         return TAG_Int(len(self.value)).to_binary() + b''.join(TAG_Int(value).to_binary() for value in self.value)
+
+    def to_snbt(self):
+        res = "[I;"
+        for i in self.value:
+            res += f"{i},"
+        if res[-1] == ',':
+            res = res[:-1]
+        res += "]"
+        return res
 
     def format_string(self, layer: int = 0):
         res = ""
@@ -225,6 +252,15 @@ class TAG_Long_Array(TAG, MutableSequence):
         return TAG_Int(len(self.value)).to_binary() + b''.join(
             TAG_Long(value=value).to_binary() for value in self.value)
 
+    def to_snbt(self):
+        res = "[B;"
+        for i in self.value:
+            res += f"{i}L,"
+        if res[-1] == ',':
+            res = res[:-1]
+        res += "]"
+        return res
+
     def format_string(self, layer: int = 0):
         res = ""
         if layer:
@@ -274,6 +310,9 @@ class TAG_String(TAG, Sequence):
 
     def to_binary(self):
         return Struct('<H').pack(len(self.value)) + self.value.encode('utf-8')
+
+    def to_snbt(self):
+        return f'"{self.value}"'
 
     def format_string(self, layer: int = 0):
         res = ""
@@ -329,6 +368,18 @@ class TAG_List(TAG, MutableSequence):
                 res += tag.to_binary()
             else:
                 res += tag.to_binary(header=False)
+        return res
+
+    def to_snbt(self):
+        res = "["
+        for tag in self.value:
+            if self.tag_id == TagId.TAG_COMPOUND and not tag.name:
+                res += f"{tag.to_snbt()[2:-1]},"
+            else:
+                res += f"{tag.to_snbt()},"
+        if res[-1] == ',':
+            res = res[:-1]
+        res += "]"
         return res
 
     def format_string(self, layer: int = 0):
@@ -425,6 +476,15 @@ class TAG_Compound(TAG, MutableMapping):
                     res += tag.to_binary(header=False)
             return res + TAG_End().to_binary()
 
+    def to_snbt(self):
+        res = "{"
+        for tag in self.value:
+            res += f"{tag.name}:{tag.to_snbt()},"
+        if res[-1] == ',':
+            res = res[:-1]
+        res += "}"
+        return res
+
     def format_string(self, layer: int = 0):
         res = ""
         if layer:
@@ -457,7 +517,8 @@ class TAG_Compound(TAG, MutableMapping):
             raise TypeError("value must be a TAG")
         for tag in self.value:
             if tag.name == key:
-                tag.value = value.value
+                value.name = key
+                self.value[self.value.index(tag)] = value
                 return
         value.name = key
         self.value.append(value)

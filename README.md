@@ -63,3 +63,16 @@ a["t3"]["t4"] = b
 with open("test.dat", "wb") as f:
     f.write(a.to_binary())
 ```
+### 5.SNBT解析
+```python
+from DreamNBT import parse_snbt
+nbt = parse_snbt("{t1:23455,t2:[1,2,3],t3:{aa:1,t4:{t1:23455,t2:[1,2,3]}}}")
+```
+### 6.NBT转为SNBT
+```python
+print(nbt.to_snbt())
+```
+示例输出:
+```text
+{t1:23455,t2:[1,2,3],t3:{aa:1,t4:{t1:23455,t2:[1,2,3]}}}
+```

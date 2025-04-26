@@ -1,5 +1,6 @@
 from .entities import *
 from typing import Union
+from .snbt import SNBTParser
 
 
 def parse_binary(binary: Union[BytesIO, bytes]) -> TAG_Compound:
@@ -11,5 +12,5 @@ def parse_binary(binary: Union[BytesIO, bytes]) -> TAG_Compound:
     return get_tag_class(root_tag_id)(binary=binary)
 
 
-
-
+def parse_snbt(snbt: str) -> TAG_Compound:
+    return SNBTParser(snbt).parse()
