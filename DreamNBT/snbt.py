@@ -1,6 +1,7 @@
-from .entities import *
-from typing import Callable
 import string
+from typing import Callable
+
+from .entities import *
 
 
 class SNBTStream:
@@ -62,6 +63,7 @@ class SNBTParser:
     def parse_number(self):
         end_values = ['}', ']', ',']
         number = self.stream.read_until(lambda x: x in end_values)
+        number = number.lower()
         unsigned = False
         is_float = False
         if number.endswith('b'):
