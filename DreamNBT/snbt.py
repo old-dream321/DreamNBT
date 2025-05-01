@@ -1,11 +1,14 @@
-import string
-from typing import Callable
 import shutil
+import string
+import uuid
+from typing import Callable
 
 from .entities import *
 
 
 class SNBTStream:
+    """SNBT解析流"""
+
     def __init__(self, snbt: str):
         self.cur = 0
         self.snbt = snbt
@@ -31,6 +34,8 @@ class SNBTStream:
 
 
 class SNBTParseError(Exception):
+    """SNBT解析错误"""
+
     def __init__(self, message, position, snbt, length=1):
         super().__init__(message),
         self.message = message
@@ -61,6 +66,8 @@ class SNBTParseError(Exception):
 
 
 class SNBTParser:
+    """SNBT解析器"""
+
     def __init__(self, snbt: str):
         self.stream = SNBTStream(snbt)
         self.last_type = None
@@ -280,6 +287,7 @@ class SNBTParser:
                         self.stream.cur,
                         self.stream.snbt
                     )
+                start_pos = self.stream.cur
                 value = self.parse()
                 if isinstance(value, TAG_String):
                     if value.value == "true":
@@ -290,12 +298,37 @@ class SNBTParser:
                         param_stream = SNBTStream(value.value[5:])
                         param = param_stream.read_until(lambda x: x == ")")
                         if param_stream.read():
-                            raise ValueError(f"Invalid expression: {value.value}")
+                            raise SNBTParseError(
+                                f"Invalid expression: {value.value}",
+                                start_pos,
+                                self.stream.snbt,
+                                self.stream.cur - start_pos
+                            )
                         parse_res = self.parse_snbt(param)
                         if parse_res.value:
                             value = TAG_Byte(1)
                         else:
                             value = TAG_Byte(0)
+                    elif value.value.startswith("uuid("):
+                        param_stream = SNBTStream(value.value[5:])
+                        param = param_stream.read_until(lambda x: x == ")")
+                        if param_stream.read():
+                            raise SNBTParseError(
+                                f"Invalid expression: {value.value}",
+                                start_pos,
+                                self.stream.snbt,
+                                self.stream.cur - start_pos
+                            )
+                        parse_res = self.parse_snbt(param)
+                        if not isinstance(parse_res, TAG_String):
+                            raise SNBTParseError(
+                                f"Invalid type at {value.value}: expected TAG_String, got {type(parse_res).__name__} ",
+                                start_pos,
+                                self.stream.snbt,
+                                self.stream.cur - start_pos
+                            )
+                        value = TAG_Int_Array(self.uuid_to_int_array(parse_res.value))
+
                 res[key.value] = value
         return res
 
@@ -312,6 +345,24 @@ class SNBTParser:
             return self.parse_string()
         else:
             return self.parse_string()
+
+    @staticmethod
+    def uuid_to_int_array(uuid_str):
+        """uuid字符串转换"""
+
+        u = uuid.UUID(uuid_str)
+        # 获取UUID的128位整数表示
+        uuid_int = u.int
+        # 将128位整数拆分为4个32位整数
+        int_array = [
+            (uuid_int >> 96) & 0xFFFFFFFF,
+            (uuid_int >> 64) & 0xFFFFFFFF,
+            (uuid_int >> 32) & 0xFFFFFFFF,
+            uuid_int & 0xFFFFFFFF
+        ]
+        # 处理符号位（如果需要有符号整数）
+        int_array = [x if x < 0x80000000 else x - 0x100000000 for x in int_array]
+        return int_array
 
     @classmethod
     def parse_snbt(cls, snbt: str):
