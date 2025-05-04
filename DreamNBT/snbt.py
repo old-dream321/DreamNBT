@@ -1,5 +1,7 @@
+import re
 import shutil
 import string
+import unicodedata
 import uuid
 from typing import Callable
 
@@ -18,19 +20,19 @@ class SNBTStream:
         return self.snbt[self.cur:self.cur + length]
 
     def read(self, length: int = 1):
-        if self.cur + length >= self.len:
+        if self.cur + length > self.len:
             return ""
         self.cur += length
         return self.snbt[self.cur - length:self.cur]
 
     def read_until(self, predicate: Callable[[str], bool]):
-        res = ""
+        buffer = []
         while self.cur < self.len:
             if predicate(self.snbt[self.cur]):
                 break
-            res += self.snbt[self.cur]
+            buffer.append(self.snbt[self.cur])
             self.cur += 1
-        return res
+        return "".join(buffer)
 
 
 class SNBTParseError(Exception):
@@ -42,12 +44,13 @@ class SNBTParseError(Exception):
         self.position = position
         self.snbt = snbt
         self.length = length
+        self._terminal_width = None
 
     def __str__(self):
+        if self._terminal_width is None:
+            self._terminal_width = shutil.get_terminal_size((80, 20)).columns
         pos = self.position
-        # 获取终端宽度，默认使用 80 列宽
-        terminal_width = shutil.get_terminal_size((80, 20)).columns
-        context_length = terminal_width - 4  # 留出边距
+        context_length = self._terminal_width - 4  # 留出边距
         half_context = context_length // 2
         disp_str = self.snbt
 
@@ -183,18 +186,103 @@ class SNBTParser:
 
         return get_tag_class(num_type)(res)
 
+    def _parse_escape(self, char):
+        """解析转义字符"""
+        if char == "x":
+            hex_str = self.stream.read(2)
+            if len(hex_str) != 2 or not re.fullmatch(r"[0-9a-fA-F]{2}", hex_str):
+                raise SNBTParseError("Invalid \\x escape", self.stream.cur - 2, self.stream.snbt, 4)
+            return chr(int(hex_str, 16))
+        elif char == "u":
+            hex_str = self.stream.read(4)
+            if len(hex_str) != 4 or not re.fullmatch(r"[0-9a-fA-F]{4}", hex_str):
+                raise SNBTParseError("Invalid \\u escape", self.stream.cur - 4, self.stream.snbt, 6)
+            return chr(int(hex_str, 16))
+        elif char == "U":
+            hex_str = self.stream.read(8)
+            if len(hex_str) != 8 or not re.fullmatch(r"[0-9a-fA-F]{8}", hex_str):
+                raise SNBTParseError("Invalid \\U escape", self.stream.cur - 8, self.stream.snbt, 10)
+            return chr(int(hex_str, 16))
+        elif char == "N":
+            if self.stream.peek(1) != "{":
+                raise SNBTParseError("Expected '{' after \\N", self.stream.cur - 1, self.stream.snbt, 2)
+            name = self.stream.read_until(lambda x: x == "}")
+            try:
+                return unicodedata.lookup(name)
+            except KeyError:
+                raise SNBTParseError(
+                    f"Unknown Unicode name: {name}",
+                    self.stream.cur - len(name) - 3,
+                    self.stream.snbt,
+                    len(name) + 4
+                )
+        else:  # 经典转义（\n, \t, \" 等）
+            escapes = {
+                "\\": "\\", "\"": "\"", "'": "'",
+                "n": "\n", "r": "\r", "t": "\t",
+                "b": "\b", "f": "\f", "s": " "
+            }
+            return escapes.get(char, char)  # 未知转义（如 \z）原样保留
+
+    def _is_escaped(self):
+        """检查当前字符是否被转义"""
+        if self.stream.cur == 0:
+            return False  # 第一个字符不可能被转义
+
+        # 从当前指针向前查找连续的 \，统计数量
+        backslash_count = 0
+        pos = self.stream.cur - 1
+        while pos >= 0 and self.stream.snbt[pos] == "\\":
+            backslash_count += 1
+            pos -= 1
+
+        # 奇数个 \ 表示当前字符被转义
+        return backslash_count % 2 == 1
+
     def parse_string(self):
+        start_pos = self.stream.cur
         self.stream.read_until(lambda x: not x.isspace())
+
+        # 判断是否带引号
         if self.stream.peek(1) in ["\"", "\'"]:
             prefix = self.stream.read()
-            res = self.stream.read_until(lambda x: x == prefix).lstrip()
-            self.stream.read()
+            end_condition = lambda x: x == prefix
         else:
-            res = self.stream.read_until(lambda x: x in ["}", "]", ",", ":"])
+            prefix = None
+            end_condition = lambda x: x in ["}", "]", ",", ":"] and not self._is_escaped()
 
-        return TAG_String(res)
+        res = []
+        while True:
+            char_pos = self.stream.cur
+            char = self.stream.read(1)
+            if not char:
+                if prefix:
+                    raise SNBTParseError(
+                        "Unclosed string",
+                        start_pos,
+                        self.stream.snbt,
+                        self.stream.cur - start_pos
+                    )
+                break
+
+            if char == "\\":  # 转义字符
+                next_char = self.stream.read(1)
+                if not next_char:
+                    raise SNBTParseError("Incomplete escape sequence", char_pos, self.stream.snbt, 2)
+                res.append(self._parse_escape(next_char))
+            elif end_condition(char):  # 终止符
+                if not prefix:
+                    self.stream.cur -= 1  # 非引号字符串回退指针
+                break
+            else:
+                res.append(char)
+
+        return TAG_String("".join(res))
 
     def parse_list(self):
+        """列表及数组解析"""
+
+        # 判断是否是数组
         if self.stream.peek(3) == "[I;":
             self.stream.read(3)
             list_type = TagId.TAG_INT_ARRAY
@@ -218,6 +306,8 @@ class SNBTParser:
             else:
                 element_start_pos = self.stream.cur  # 记录元素开始位置
                 number = self.parse()
+
+                # 检查类型
                 if list_type == TagId.TAG_INT_ARRAY and not isinstance(number, TAG_Int):
                     raise SNBTParseError(
                         f"Invalid type at index {index}: expected TAG_Int, got {type(number).__name__}",
@@ -248,7 +338,7 @@ class SNBTParser:
             return TAG_Byte_Array(bytearray([ele.value for ele in value]))
         elif list_type == TagId.TAG_LONG_ARRAY:
             return TAG_Long_Array([ele.value for ele in value])
-        else:
+        else:  # 列表
             types = [type(ele) for ele in value]
             if len(set(types)) == 1:
                 return TAG_List(value)
@@ -264,6 +354,7 @@ class SNBTParser:
                 return TAG_List(value_new)
 
     def parse_compound(self):
+        """解析compound"""
         res = TAG_Compound()
         self.stream.read()
         while True:
@@ -274,7 +365,7 @@ class SNBTParser:
                 self.stream.read()
             else:
                 key = self.parse_string()
-                if not key.value:
+                if not key.value:  # 空键
                     raise SNBTParseError(
                         f"Expected str at {self.stream.cur}",
                         self.stream.cur,
@@ -287,7 +378,7 @@ class SNBTParser:
                         self.stream.cur,
                         self.stream.snbt
                     )
-                start_pos = self.stream.cur
+                start_pos = self.stream.cur  # 记录值开始位置
                 value = self.parse()
                 if isinstance(value, TAG_String):
                     if value.value == "true":
@@ -297,6 +388,7 @@ class SNBTParser:
                     elif value.value.startswith("bool("):
                         param_stream = SNBTStream(value.value[5:])
                         param = param_stream.read_until(lambda x: x == ")")
+                        param_stream.read()
                         if param_stream.read():
                             raise SNBTParseError(
                                 f"Invalid expression: {value.value}",
@@ -312,6 +404,7 @@ class SNBTParser:
                     elif value.value.startswith("uuid("):
                         param_stream = SNBTStream(value.value[5:])
                         param = param_stream.read_until(lambda x: x == ")")
+                        param_stream.read()
                         if param_stream.read():
                             raise SNBTParseError(
                                 f"Invalid expression: {value.value}",
@@ -335,6 +428,12 @@ class SNBTParser:
     def parse(self):
         self.stream.read_until(lambda x: not x.isspace())
         prefix = self.stream.peek(1)
+        if not prefix:
+            raise SNBTParseError(
+                f"Expected value at {self.stream.cur}",
+                self.stream.cur,
+                self.stream.snbt
+            )
         if prefix == "{":
             return self.parse_compound()
         elif prefix == "[":
